@@ -1,10 +1,17 @@
 #include "WiFi.h"
 #include "PubSubClient.h"
+#include "DHT.h"
 
-const char *ssid = "VIRUS2X";
-const char *password = "60120036273529369257";
-const int pump = 8;  // the number of the LED pin
-const char* tz = "CET-1CEST,M3.5.0/2,M10.5.0/3";
+#define DHTPIN 0
+#define DHTTYPE DHT11
+#define timePulsePump 5000
+#define timeToRead 0.5 * 60 * 1000
+
+DHT dht(DHTPIN, DHTTYPE);
+
+const char* ssid = "VIRUS2X";
+const char* password = "60120036273529369257";
+const int pump = 10;
 const char* ntpServer1 = "ntp1.informatik.uni-erlangen.de";
 const char* ntpServer2 = "ptbtime1.ptb.de";
 const char* ntpServer3 = "ptbtime2.ptb.de";
@@ -13,23 +20,25 @@ const char* ntpServer3 = "ptbtime2.ptb.de";
 //const char* mqtt_server = "maqiatto.com"; // IP do seu broker MQTT (ex: Mosquitto)
 //const char* mqtt_user = "tissianorodri@gmail.com";  // se não tiver auth, deixe em branco
 //const char* mqtt_pass = "vt260957";
-const char* mqtt_server = "avenito.ddns.net"; // IP do seu broker MQTT (ex: Mosquitto)
-const char* mqtt_user = "user01";  // se não tiver auth, deixe em branco
+const char* mqtt_server = "avenito.ddns.net";  // IP do seu broker MQTT (ex: Mosquitto)
+const char* mqtt_user = "user01";              // se não tiver auth, deixe em branco
 const char* mqtt_pass = "123456";
-const int   mqtt_port = 1883;
+const int mqtt_port = 1883;
 
 struct tm timeinfo;
+int numReconn = -1;
 char timeBuff[20];
-
+char reconnNum[4];
 String payloadStr;
 
 boolean pumpOutput = false, lastPumpOutup = false;
 static unsigned long timePumpOutput = 0;
+static unsigned long timeToReadTH = 0;
 
 WiFiClient espClient;
 PubSubClient client(espClient);
 
-void printTimeStamp(){
+void printTimeStamp() {
   getLocalTime(&timeinfo);
   strftime(timeBuff, sizeof(timeBuff), "%d %b %y\n%H:%M:%S", &timeinfo);
   Serial.println(timeBuff);
@@ -43,7 +52,9 @@ void reconnect() {
       Serial.println("Conectado!");
       printTimeStamp();
       client.publish("st/conecTime", timeBuff);
-      client.subscribe("ctr/pump"); // inscreve-se em um tópico
+      sprintf(reconnNum, "%d", ++numReconn);
+      client.publish("st/reconnNum", reconnNum);
+      client.subscribe("ctr/pump");  // inscreve-se em um tópico
     } else {
       Serial.print("Falhou, rc=");
       Serial.print(client.state());
@@ -63,8 +74,8 @@ void callback(char* topic, byte* payload, unsigned int length) {
   Serial.print(" => ");
   Serial.print(payloadStr);
   Serial.println();
-  if (strcmp(topic, "ctr/pump") == 0){
-    if (payload[0] == '1'){
+  if (strcmp(topic, "ctr/pump") == 0) {
+    if (payload[0] == '1') {
       pumpOutput = true;
     } else {
       pumpOutput = false;
@@ -88,7 +99,7 @@ void setup() {
   Serial.println(WiFi.localIP());
   client.setServer(mqtt_server, mqtt_port);
   client.setCallback(callback);
-  configTime(1 * 3600, 1, ntpServer1, ntpServer2, ntpServer3);
+  configTime(2 * 3600, 1, ntpServer1, ntpServer2, ntpServer3);
   Serial.println("Sincronizando tempo...");
   while (!getLocalTime(&timeinfo)) {
     Serial.print(".");
@@ -96,6 +107,7 @@ void setup() {
   }
   Serial.println("Tempo sincronizado!");
   Serial.println(&timeinfo, "%d %b %y %H:%M:%S");
+  dht.begin();
 }
 
 void loop() {
@@ -106,13 +118,13 @@ void loop() {
   client.loop();
 
   // Control pump output
-  if (pumpOutput){
+  if (pumpOutput) {
     if (lastPumpOutup) {
-      if (millis() - timePumpOutput > 5000){
+      if (millis() - timePumpOutput > timePulsePump) {
         pumpOutput = false;
         lastPumpOutup = false;
         client.publish("ctr/pump", "0");
-     }
+      }
     } else {
       lastPumpOutup = true;
       timePumpOutput = millis();
@@ -122,10 +134,28 @@ void loop() {
   } else {
     lastPumpOutup = false;
   }
-
-  if (pumpOutput){
+  if (pumpOutput) {
     digitalWrite(pump, LOW);
   } else {
     digitalWrite(pump, HIGH);
+  }
+  // END Control pump output
+
+  // Tempo de leitura de temperatura e umidade
+  if (millis() - timeToReadTH > timeToRead) {
+    float h = dht.readHumidity();
+    float t = dht.readTemperature();
+    char temp[5];
+    char hum[5];
+    sprintf(temp, "%.1f", t);
+    sprintf(hum, "%.1f", h);
+    client.publish("st/tempAmb", temp);
+    client.publish("st/hum", hum);
+    Serial.print("Humidity: ");
+    Serial.print(hum);
+    Serial.print("%  Temperature: ");
+    Serial.print(temp);
+    Serial.println("°C ");
+    timeToReadTH = millis();
   }
 }
