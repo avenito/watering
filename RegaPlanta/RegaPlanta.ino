@@ -5,7 +5,9 @@ const char *ssid = "VIRUS2X";
 const char *password = "60120036273529369257";
 const int pump = 8;  // the number of the LED pin
 const char* tz = "CET-1CEST,M3.5.0/2,M10.5.0/3";
-const char* ntpServer = "ntp1.informatik.uni-erlangen.de";
+const char* ntpServer1 = "ntp1.informatik.uni-erlangen.de";
+const char* ntpServer2 = "ptbtime1.ptb.de";
+const char* ntpServer3 = "ptbtime2.ptb.de";
 
 
 //const char* mqtt_server = "maqiatto.com"; // IP do seu broker MQTT (ex: Mosquitto)
@@ -29,9 +31,8 @@ PubSubClient client(espClient);
 
 void printTimeStamp(){
   getLocalTime(&timeinfo);
-  strftime(timeBuff, sizeof(timeBuff), "%d.%m.%y\n%H:%M:%S", &timeinfo);
+  strftime(timeBuff, sizeof(timeBuff), "%d %b %y\n%H:%M:%S", &timeinfo);
   Serial.println(timeBuff);
-  client.publish("st/lastAct", timeBuff);
 }
 
 void reconnect() {
@@ -40,6 +41,8 @@ void reconnect() {
     Serial.print("Tentando conectar ao MQTT...");
     if (client.connect("User 01", mqtt_user, mqtt_pass)) {
       Serial.println("Conectado!");
+      printTimeStamp();
+      client.publish("st/conecTime", timeBuff);
       client.subscribe("ctr/pump"); // inscreve-se em um tópico
     } else {
       Serial.print("Falhou, rc=");
@@ -85,7 +88,7 @@ void setup() {
   Serial.println(WiFi.localIP());
   client.setServer(mqtt_server, mqtt_port);
   client.setCallback(callback);
-  configTime(1 * 3600, 1, ntpServer);
+  configTime(1 * 3600, 1, ntpServer1, ntpServer2, ntpServer3);
   Serial.println("Sincronizando tempo...");
   while (!getLocalTime(&timeinfo)) {
     Serial.print(".");
@@ -114,6 +117,7 @@ void loop() {
       lastPumpOutup = true;
       timePumpOutput = millis();
       printTimeStamp();
+      client.publish("st/lastAct", timeBuff);
     }
   } else {
     lastPumpOutup = false;
