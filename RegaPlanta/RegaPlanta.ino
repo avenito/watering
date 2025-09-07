@@ -4,8 +4,8 @@
 
 #define DHTPIN 0
 #define DHTTYPE DHT11
-#define timePulsePump 5000
-#define timeToRead 0.5 * 60 * 1000
+#define timePulsePump 15000 // tempo em milesegundos
+#define timeToRead 1 * 60 * 1000 // 
 
 DHT dht(DHTPIN, DHTTYPE);
 
@@ -18,8 +18,8 @@ const char* ntpServer3 = "ptbtime2.ptb.de";
 
 
 //const char* mqtt_server = "maqiatto.com"; // IP do seu broker MQTT (ex: Mosquitto)
-//const char* mqtt_user = "tissianorodri@gmail.com";  // se não tiver auth, deixe em branco
-//const char* mqtt_pass = "vt260957";
+//const char* mqtt_user = "avenito@yahoo.com.br";  // se não tiver auth, deixe em branco
+//const char* mqtt_pass = "h1y2g3K5";
 const char* mqtt_server = "avenito.ddns.net";  // IP do seu broker MQTT (ex: Mosquitto)
 const char* mqtt_user = "user01";              // se não tiver auth, deixe em branco
 const char* mqtt_pass = "123456";
@@ -28,12 +28,16 @@ const int mqtt_port = 1883;
 struct tm timeinfo;
 int numReconn = -1;
 char timeBuff[20];
+char pumpLastActBuff[20];
+char reconnLastTimeBuff[20];
 char reconnNum[4];
 String payloadStr;
 
 boolean pumpOutput = false, lastPumpOutup = false;
 static unsigned long timePumpOutput = 0;
 static unsigned long timeToReadTH = 0;
+
+float last_h, last_t;
 
 WiFiClient espClient;
 PubSubClient client(espClient);
@@ -51,10 +55,11 @@ void reconnect() {
     if (client.connect("User 01", mqtt_user, mqtt_pass)) {
       Serial.println("Conectado!");
       printTimeStamp();
-      client.publish("st/conecTime", timeBuff);
+      memcpy(reconnLastTimeBuff, timeBuff, sizeof(reconnLastTimeBuff));
+      //client.publish("avenito@yahoo.com.br/00001/00001/st/conecTime", reconnLastTimeBuff);
       sprintf(reconnNum, "%d", ++numReconn);
-      client.publish("st/reconnNum", reconnNum);
-      client.subscribe("ctr/pump");  // inscreve-se em um tópico
+      //client.publish("avenito@yahoo.com.br/00001/00001/st/reconnNum", reconnNum);
+      client.subscribe("avenito@yahoo.com.br/00001/00001/ctr/pump");  // inscreve-se em um tópico//
     } else {
       Serial.print("Falhou, rc=");
       Serial.print(client.state());
@@ -74,7 +79,7 @@ void callback(char* topic, byte* payload, unsigned int length) {
   Serial.print(" => ");
   Serial.print(payloadStr);
   Serial.println();
-  if (strcmp(topic, "ctr/pump") == 0) {
+  if (strcmp(topic, "avenito@yahoo.com.br/00001/00001/ctr/pump") == 0) {
     if (payload[0] == '1') {
       pumpOutput = true;
     } else {
@@ -123,21 +128,22 @@ void loop() {
       if (millis() - timePumpOutput > timePulsePump) {
         pumpOutput = false;
         lastPumpOutup = false;
-        client.publish("ctr/pump", "0");
+        client.publish("avenito@yahoo.com.br/00001/00001/ctr/pump", "0");
       }
     } else {
       lastPumpOutup = true;
       timePumpOutput = millis();
       printTimeStamp();
-      client.publish("st/lastAct", timeBuff);
+      memcpy(pumpLastActBuff, timeBuff, sizeof(pumpLastActBuff));
+      client.publish("avenito@yahoo.com.br/00001/00001/st/lastAct", pumpLastActBuff);
     }
   } else {
     lastPumpOutup = false;
   }
   if (pumpOutput) {
-    digitalWrite(pump, LOW);
-  } else {
     digitalWrite(pump, HIGH);
+  } else {
+    digitalWrite(pump, LOW);
   }
   // END Control pump output
 
@@ -149,13 +155,23 @@ void loop() {
     char hum[5];
     sprintf(temp, "%.1f", t);
     sprintf(hum, "%.1f", h);
-    client.publish("st/tempAmb", temp);
-    client.publish("st/hum", hum);
-    Serial.print("Humidity: ");
-    Serial.print(hum);
-    Serial.print("%  Temperature: ");
-    Serial.print(temp);
-    Serial.println("°C ");
+    if (abs(t - last_t) >= 0.1){
+      client.publish("avenito@yahoo.com.br/00001/00001/st/tempAmb", temp);
+      Serial.print("Temperature: ");
+      Serial.print(temp);
+      Serial.println("°C ");
+    }
+    if (abs(h - last_h) >= 1){
+      client.publish("avenito@yahoo.com.br/00001/00001/st/humAmb", hum);
+      Serial.print("Humidity: ");
+      Serial.print(hum);
+      Serial.println("%");
+    }
+    client.publish("avenito@yahoo.com.br/00001/00001/st/conecTime", reconnLastTimeBuff);
+    client.publish("avenito@yahoo.com.br/00001/00001/st/reconnNum", reconnNum);
+    client.publish("avenito@yahoo.com.br/00001/00001/st/lastAct", pumpLastActBuff);
+    last_h = h;
+    last_t = t;
     timeToReadTH = millis();
   }
 }
