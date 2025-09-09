@@ -13,3 +13,6 @@ const char* mqtt_user = "user01";              // se não tiver auth, deixe em b
 const char* mqtt_pass = "123456";
 const int mqtt_port = 1883;
 
+const String client_ID = "00001";
+const String device_ID = "00001";
+

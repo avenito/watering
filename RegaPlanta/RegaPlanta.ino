@@ -1,3 +1,4 @@
+#include <ArduinoJson.h>
 #include "WiFi.h"
 #include "PubSubClient.h"
 #include "DHT.h"
@@ -6,7 +7,7 @@
 #define DHTPIN 0
 #define DHTTYPE DHT11
 #define timePulsePump 15000 // tempo em milesegundos
-#define timeToRead 1 * 60 * 1000 // minuto * segundos + milesegundos
+#define timeToRead 0.1 * 60 * 1000 // minuto * segundos + milesegundos
 
 DHT dht(DHTPIN, DHTTYPE);
 
@@ -18,13 +19,16 @@ char timeBuff[20];
 char pumpLastActBuff[20];
 char reconnLastTimeBuff[20];
 char reconnNum[4];
-String payloadStr;
+String payloadStr, topicStr;
 
-boolean pumpOutput = false, lastPumpOutup = false;
+boolean pumpOutput = false, lastPumpOutup = false, sendData = false;
 static unsigned long timePumpOutput = 0;
 static unsigned long timeToReadTH = 0;
 
 float last_h, last_t;
+
+StaticJsonDocument<200> dataObj;
+char jsonBuff[200];
 
 WiFiClient espClient;
 PubSubClient client(espClient);
@@ -46,7 +50,8 @@ void reconnect() {
       //client.publish("avenito@yahoo.com.br/00001/00001/st/conecTime", reconnLastTimeBuff);
       sprintf(reconnNum, "%d", ++numReconn);
       //client.publish("avenito@yahoo.com.br/00001/00001/st/reconnNum", reconnNum);
-      client.subscribe("avenito@yahoo.com.br/00001/00001/ctr/pump");  // inscreve-se em um tópico//
+      topicStr = "avenito@yahoo.com.br/" + client_ID + "/" + device_ID + "/ctr/pump";
+      client.subscribe(topicStr.c_str());  // inscreve-se em um tópico//
     } else {
       Serial.print("Falhou, rc=");
       Serial.print(client.state());
@@ -142,21 +147,38 @@ void loop() {
     char hum[5];
     sprintf(temp, "%.1f", t);
     sprintf(hum, "%.1f", h);
+
+    Serial.print("Temperature: ");
+    Serial.print(temp);
+    Serial.print("°C ");
+    Serial.print(" Humidity: ");
+    Serial.print(hum);
+    Serial.println("%");
+
     if (abs(t - last_t) >= 0.1){
-      client.publish("avenito@yahoo.com.br/00001/00001/st/tempAmb", temp);
-      Serial.print("Temperature: ");
-      Serial.print(temp);
-      Serial.println("°C ");
+      sendData = true;
+      //topicStr = client_ID + "/" + device_ID + "/st/tempAmb";
+      //client.publish(topicStr.c_str(), temp);
     }
     if (abs(h - last_h) >= 1){
-      client.publish("avenito@yahoo.com.br/00001/00001/st/humAmb", hum);
-      Serial.print("Humidity: ");
-      Serial.print(hum);
-      Serial.println("%");
+      sendData = true;
+      //topicStr = client_ID + "/" + device_ID + "/st/humAmb";
+      //client.publish(topicStr.c_str(), hum);
     }
-    client.publish("avenito@yahoo.com.br/00001/00001/st/conecTime", reconnLastTimeBuff);
-    client.publish("avenito@yahoo.com.br/00001/00001/st/reconnNum", reconnNum);
-    client.publish("avenito@yahoo.com.br/00001/00001/st/lastAct", pumpLastActBuff);
+
+    if (sendData == true){
+      dataObj["sensor01"] = "temp";
+      dataObj["valor01"] = String(t);
+      dataObj["status01"] = "ok";
+      dataObj["sensor02"] = "unmidade";
+      dataObj["valor02"] = String(h);
+      dataObj["status02"] = "ok";
+      serializeJson(dataObj, jsonBuff);
+      client.publish("00001/00001", jsonBuff);
+      Serial.print(jsonBuff);
+      sendData = false;
+    }
+    
     last_h = h;
     last_t = t;
     timeToReadTH = millis();
