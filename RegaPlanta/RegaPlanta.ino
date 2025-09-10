@@ -50,7 +50,7 @@ void reconnect() {
       //client.publish("avenito@yahoo.com.br/00001/00001/st/conecTime", reconnLastTimeBuff);
       sprintf(reconnNum, "%d", ++numReconn);
       //client.publish("avenito@yahoo.com.br/00001/00001/st/reconnNum", reconnNum);
-      topicStr = "avenito@yahoo.com.br/" + client_ID + "/" + device_ID + "/ctr/pump";
+      topicStr = String(client_ID) + "/ctr/pump";
       client.subscribe(topicStr.c_str());  // inscreve-se em um tópico//
     } else {
       Serial.print("Falhou, rc=");
@@ -167,14 +167,16 @@ void loop() {
     }
 
     if (sendData == true){
-      dataObj["sensor01"] = "temp";
-      dataObj["valor01"] = String(t);
-      dataObj["status01"] = "ok";
-      dataObj["sensor02"] = "unmidade";
-      dataObj["valor02"] = String(h);
-      dataObj["status02"] = "ok";
+      dataObj["prot"] = "1";
+      dataObj["dev"] = "1";
+      JsonObject temp = dataObj.createNestedObject("temp");
+      temp["val"] = String(t);
+      temp["st"] = "ok";
+      JsonObject hum = dataObj.createNestedObject("hum");
+      hum["val"] = String(h);
+      hum["st"] = "ok";
       serializeJson(dataObj, jsonBuff);
-      client.publish("00001/00001", jsonBuff);
+      client.publish(client_ID, jsonBuff);
       Serial.print(jsonBuff);
       sendData = false;
     }
