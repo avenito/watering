@@ -2,12 +2,14 @@
 #include "WiFi.h"
 #include "PubSubClient.h"
 #include "DHT.h"
+#include "time.h"
 #include "config.h"
 
 #define DHTPIN 0
 #define DHTTYPE DHT11
-#define timePulsePump 15000 // tempo em milesegundos
-#define timeToRead 0.1 * 60 * 1000 // minuto * segundos + milesegundos
+#define timePulsePump 15000 // tempo em milesegundos que a bomba fica ligada
+#define timeToRead 0.1 * 60 * 1000 // intervalo de leitura de temperatura e umidade - minuto * segundos + milesegundos
+#define heartbeat 0.5 * 60 * 1000 // intervalo para mensagem "alive"
 
 DHT dht(DHTPIN, DHTTYPE);
 
@@ -21,11 +23,14 @@ char reconnLastTimeBuff[20];
 char reconnNum[4];
 String payloadStr, topicStr;
 
-boolean pumpOutput = false, lastPumpOutup = false, sendData = false;
+boolean pumpOutput = false, lastPumpOutup = false;
+boolean sendTempData = false, sendHumData = false, sendHeartbeat = false;
+
 static unsigned long timePumpOutput = 0;
 static unsigned long timeToReadTH = 0;
+static unsigned long timeToHeartbeat = 0;
 
-float last_h, last_t;
+float h, t, last_h, last_t;
 
 StaticJsonDocument<200> dataObj;
 char jsonBuff[200];
@@ -141,8 +146,8 @@ void loop() {
 
   // Tempo de leitura de temperatura e umidade
   if (millis() - timeToReadTH > timeToRead) {
-    float h = dht.readHumidity();
-    float t = dht.readTemperature();
+    h = dht.readHumidity();
+    t = dht.readTemperature();
     char temp[5];
     char hum[5];
     sprintf(temp, "%.1f", t);
@@ -156,33 +161,53 @@ void loop() {
     Serial.println("%");
 
     if (abs(t - last_t) >= 0.1){
-      sendData = true;
+      sendTempData = true;
       //topicStr = client_ID + "/" + device_ID + "/st/tempAmb";
       //client.publish(topicStr.c_str(), temp);
     }
     if (abs(h - last_h) >= 1){
-      sendData = true;
+      sendHumData = true;
       //topicStr = client_ID + "/" + device_ID + "/st/humAmb";
       //client.publish(topicStr.c_str(), hum);
     }
 
-    if (sendData == true){
-      dataObj["prot"] = "1";
-      dataObj["dev"] = "1";
-      JsonObject temp = dataObj.createNestedObject("temp");
-      temp["val"] = String(t);
-      temp["st"] = "ok";
-      JsonObject hum = dataObj.createNestedObject("hum");
-      hum["val"] = String(h);
-      hum["st"] = "ok";
-      serializeJson(dataObj, jsonBuff);
-      client.publish(client_ID, jsonBuff);
-      Serial.print(jsonBuff);
-      sendData = false;
-    }
-    
     last_h = h;
     last_t = t;
     timeToReadTH = millis();
   }
+  // END Tempo de leitura de temperatura e umidade
+
+  // Heartbeat
+  if (millis() - timeToHeartbeat > heartbeat) {
+    sendHeartbeat = true;
+  }
+  // END Heartbeat
+
+  // Montagem de pacote de envio
+  if ((sendTempData == true) || (sendHumData == true) || (sendHeartbeat == true)){
+    dataObj.clear();
+    dataObj["prot"] = 1;
+    dataObj["dev"] = 1;
+    time_t now;
+    time(&now);
+    dataObj["ts"] = now;
+    if (sendTempData == true){
+      JsonObject temp = dataObj.createNestedObject("temp");
+      temp["val"] = t;
+      temp["st"] = "ok";
+      sendTempData = false;
+    }
+    if (sendHumData == true){
+      JsonObject hum = dataObj.createNestedObject("hum");
+      hum["val"] = h;
+      hum["st"] = "ok";
+      sendHumData = false;
+    }
+    sendHeartbeat = false;
+    timeToHeartbeat = millis(); // reset time to heartbeat
+    serializeJson(dataObj, jsonBuff);
+    client.publish(client_ID, jsonBuff);
+    Serial.print(jsonBuff);
+  }
+  // END Montagem de pacote de envio
 }
